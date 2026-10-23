@@ -12,7 +12,7 @@ jobs:
         with:
           python-version: '3.12'  
       - name: Install dependencies
-        run: pip install pytest pylint
+        run: pip install --only-binary=:all: --require-hashes -r requirements-ci.txt
       - name: Run tests
         run: pytest
       - name: Lint with pylint
