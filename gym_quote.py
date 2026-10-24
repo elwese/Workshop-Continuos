@@ -64,6 +64,21 @@ def calculate_group_discount(subtotal: float, members: int) -> float:
     return 0.0
 
 
+def calculate_special_offer_discount(amount: float) -> float:
+    """Return the special offer discount amount (R5).
+
+    Applied to the amount after R4:
+    - If greater than 400, subtract 50.
+    - Otherwise, if greater than 200, subtract 20.
+    - The two never add up.
+    """
+    if amount > 400:
+        return 50.0
+    if amount > 200:
+        return 20.0
+    return 0.0
+
+
 def calculate_monthly_cost(
     plan: str,
     extras: Sequence[str] = (),
@@ -72,7 +87,9 @@ def calculate_monthly_cost(
     """Return the monthly cost after validating and applying discounts."""
     subtotal = calculate_subtotal(plan, extras=extras, members=members)
     group_discount = calculate_group_discount(subtotal, members=members)
-    total = subtotal - group_discount
+    amount_after_r4 = subtotal - group_discount
+    special_offer_discount = calculate_special_offer_discount(amount_after_r4)
+    total = amount_after_r4 - special_offer_discount
     return round_half_up(total)
 
 

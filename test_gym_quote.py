@@ -5,6 +5,7 @@ import pytest
 from gym_quote import (
     calculate_group_discount,
     calculate_monthly_cost,
+    calculate_special_offer_discount,
     calculate_subtotal,
 )
 
@@ -50,6 +51,50 @@ def test_group_discount_not_applied_for_single_member():
     """R4: Quotes with 1 member do not receive the group discount."""
     # BASIC (30) + GROUP_CLASSES (15) * 1 = 45. No discount -> 45.
     assert calculate_monthly_cost("BASIC", extras=["GROUP_CLASSES"], members=1) == 45
+
+
+@pytest.mark.parametrize(
+    ("amount", "expected_discount"),
+    [
+        (150.0, 0.0),
+        (200.0, 0.0),
+        (200.01, 20.0),
+        (300.0, 20.0),
+        (400.0, 20.0),
+        (400.01, 50.0),
+        (500.0, 50.0),
+    ],
+)
+def test_special_offer_discount_calculation(amount, expected_discount):
+    """R5: Test special offer tiers (>400 -> 50, >200 -> 20, non-stacking)."""
+    assert calculate_special_offer_discount(amount) == expected_discount
+
+
+def test_special_offer_applied_in_cost_calculation():
+    """R5: Test special offer applied on amount after R4 group discount."""
+    # STANDARD (45) + GROUP_CLASSES (15) + PERSONAL_TRAINING (25) = 85 per member.
+    # 4 members -> subtotal = 340.
+    # R4 group discount (10%) = 34 -> amount after R4 = 306.
+    # R5 special offer: 306 > 200 -> subtract 20 -> 286.
+    assert (
+        calculate_monthly_cost(
+            "STANDARD",
+            extras=["GROUP_CLASSES", "PERSONAL_TRAINING"],
+            members=4,
+        )
+        == 286
+    )
+
+
+def test_special_offer_uses_amount_after_r4_not_raw_subtotal():
+    """R5: Verify the discount tier is decided AFTER R4 discount is subtracted."""
+    # Subtotal = 420. Without R4 it would be > 400 (50 discount).
+    # But after 10% group discount: 420 * 0.90 = 378 (<= 400, > 200), so discount is 20, not 50!
+    subtotal = 420.0
+    group_discount = calculate_group_discount(subtotal, members=2)
+    amount_after_r4 = subtotal - group_discount
+    assert amount_after_r4 == 378.0
+    assert calculate_special_offer_discount(amount_after_r4) == 20.0
 
 
 def test_plan_and_extra_names_are_case_insensitive():
