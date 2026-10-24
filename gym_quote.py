@@ -79,17 +79,38 @@ def calculate_special_offer_discount(amount: float) -> float:
     return 0.0
 
 
+def has_premium_extras(extras: Sequence[str]) -> bool:
+    """Return True if at least one selected extra is a premium extra."""
+    return any(EXTRAS[extra.strip().upper()][1] for extra in extras)
+
+
+def calculate_premium_surcharge(amount: float, has_premium: bool) -> float:
+    """Return the premium surcharge amount (R6).
+
+    If the selection includes at least one premium extra, add 15% to the amount after R5.
+    """
+    if has_premium:
+        return amount * 0.15
+    return 0.0
+
+
 def calculate_monthly_cost(
     plan: str,
     extras: Sequence[str] = (),
     members: int = 1,
 ) -> int:
-    """Return the monthly cost after validating and applying discounts."""
+    """Return the monthly cost after validating and applying discounts and surcharges."""
     subtotal = calculate_subtotal(plan, extras=extras, members=members)
     group_discount = calculate_group_discount(subtotal, members=members)
     amount_after_r4 = subtotal - group_discount
+
     special_offer_discount = calculate_special_offer_discount(amount_after_r4)
-    total = amount_after_r4 - special_offer_discount
+    amount_after_r5 = amount_after_r4 - special_offer_discount
+
+    has_premium = has_premium_extras(extras)
+    premium_surcharge = calculate_premium_surcharge(amount_after_r5, has_premium=has_premium)
+    total = amount_after_r5 + premium_surcharge
+
     return round_half_up(total)
 
 

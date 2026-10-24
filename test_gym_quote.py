@@ -5,8 +5,10 @@ import pytest
 from gym_quote import (
     calculate_group_discount,
     calculate_monthly_cost,
+    calculate_premium_surcharge,
     calculate_special_offer_discount,
     calculate_subtotal,
+    has_premium_extras,
 )
 
 
@@ -95,6 +97,80 @@ def test_special_offer_uses_amount_after_r4_not_raw_subtotal():
     amount_after_r4 = subtotal - group_discount
     assert amount_after_r4 == 378.0
     assert calculate_special_offer_discount(amount_after_r4) == 20.0
+
+
+def test_has_premium_extras_identification():
+    """R6: Correctly detect if a selection includes at least one premium extra."""
+    assert not has_premium_extras([])
+    assert not has_premium_extras(["GROUP_CLASSES", "PERSONAL_TRAINING"])
+    assert has_premium_extras(["SPA"])
+    assert has_premium_extras(["SPECIALIZED_PROGRAM"])
+    assert has_premium_extras(["GROUP_CLASSES", "SPA"])
+    assert has_premium_extras(["SPA", "SPECIALIZED_PROGRAM"])
+
+
+def test_calculate_premium_surcharge_amount():
+    """R6: Add 15% when premium extras are present, 0% otherwise."""
+    assert calculate_premium_surcharge(100.0, has_premium=False) == 0.0
+    assert calculate_premium_surcharge(100.0, has_premium=True) == 15.0
+    assert calculate_premium_surcharge(200.0, has_premium=True) == 30.0
+
+
+def test_premium_surcharge_applied_with_single_premium_extra():
+    """R6: 15% surcharge added to amount after R5 for single premium extra."""
+    # Worked example from assignment table:
+    # PREMIUM (70) + GROUP_CLASSES (15) + SPA (30) = 115 per member.
+    # 2 members -> subtotal = 230.
+    # R4 group discount (10%) = 23 -> amount after R4 = 207.
+    # R5 special offer (207 > 200) -> subtract 20 -> amount after R5 = 187.
+    # R6 premium surcharge (SPA is premium) -> 187 * 0.15 = 28.05 -> total = 215.05.
+    # R7 rounding half-up -> 215.
+    assert (
+        calculate_monthly_cost(
+            "PREMIUM",
+            extras=["GROUP_CLASSES", "SPA"],
+            members=2,
+        )
+        == 215
+    )
+
+
+def test_premium_surcharge_applied_once_with_multiple_premium_extras():
+    """R6: 15% surcharge is added once even when multiple premium extras are selected."""
+    # Worked example from assignment table:
+    # PREMIUM (70) + SPA (30) + SPECIALIZED_PROGRAM (40) = 140 per member.
+    # 3 members -> subtotal = 420.
+    # R4 group discount (10%) = 42 -> amount after R4 = 378.
+    # R5 special offer (378 > 200, <= 400) -> subtract 20 -> amount after R5 = 358.
+    # R6 premium surcharge (15%) -> 358 * 1.15 = 411.7.
+    # R7 rounding half-up -> 412.
+    assert (
+        calculate_monthly_cost(
+            "PREMIUM",
+            extras=["SPA", "SPECIALIZED_PROGRAM"],
+            members=3,
+        )
+        == 412
+    )
+
+
+def test_premium_surcharge_combined_with_max_discounts():
+    """R6: Full pipeline test with group discount, max special offer, and surcharge."""
+    # Worked example from assignment table:
+    # PREMIUM (70) + SPA (30) + SPECIALIZED_PROGRAM (40) + PERSONAL_TRAINING (25) = 165 per member.
+    # 4 members -> subtotal = 660.
+    # R4 group discount (10%) = 66 -> amount after R4 = 594.
+    # R5 special offer (594 > 400) -> subtract 50 -> amount after R5 = 544.
+    # R6 premium surcharge (15%) -> 544 * 1.15 = 625.6.
+    # R7 rounding half-up -> 626.
+    assert (
+        calculate_monthly_cost(
+            "PREMIUM",
+            extras=["SPA", "SPECIALIZED_PROGRAM", "PERSONAL_TRAINING"],
+            members=4,
+        )
+        == 626
+    )
 
 
 def test_plan_and_extra_names_are_case_insensitive():
