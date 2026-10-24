@@ -2,6 +2,7 @@
 
 import argparse
 from collections.abc import Sequence
+from decimal import Decimal, ROUND_HALF_UP
 
 PLANS = {
     "BASIC": 30,
@@ -17,12 +18,17 @@ EXTRAS = {
 }
 
 
-def calculate_monthly_cost(
+def round_half_up(value: float) -> int:
+    """Round a number half up to the nearest integer."""
+    return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def calculate_subtotal(
     plan: str,
     extras: Sequence[str] = (),
     members: int = 1,
 ) -> int:
-    """Return the monthly cost after validating the selected plan and extras."""
+    """Return the subtotal after validating the selected plan and extras (R1, R2, R3)."""
     if not isinstance(members, int) or isinstance(members, bool) or members < 1:
         raise ValueError("The number of members must be an integer of at least 1.")
 
@@ -46,6 +52,66 @@ def calculate_monthly_cost(
         extra_total += price
 
     return (PLANS[plan_name] + extra_total) * members
+
+
+def calculate_group_discount(subtotal: float, members: int) -> float:
+    """Return the group discount amount (R4).
+
+    With 2 or more members, the subtotal gets a 10% discount.
+    """
+    if members >= 2:
+        return subtotal * 0.10
+    return 0.0
+
+
+def calculate_special_offer_discount(amount: float) -> float:
+    """Return the special offer discount amount (R5).
+
+    Applied to the amount after R4:
+    - If greater than 400, subtract 50.
+    - Otherwise, if greater than 200, subtract 20.
+    - The two never add up.
+    """
+    if amount > 400:
+        return 50.0
+    if amount > 200:
+        return 20.0
+    return 0.0
+
+
+def has_premium_extras(extras: Sequence[str]) -> bool:
+    """Return True if at least one selected extra is a premium extra."""
+    return any(EXTRAS[extra.strip().upper()][1] for extra in extras)
+
+
+def calculate_premium_surcharge(amount: float, has_premium: bool) -> float:
+    """Return the premium surcharge amount (R6).
+
+    If the selection includes at least one premium extra, add 15% to the amount after R5.
+    """
+    if has_premium:
+        return amount * 0.15
+    return 0.0
+
+
+def calculate_monthly_cost(
+    plan: str,
+    extras: Sequence[str] = (),
+    members: int = 1,
+) -> int:
+    """Return the monthly cost after validating and applying discounts and surcharges."""
+    subtotal = calculate_subtotal(plan, extras=extras, members=members)
+    group_discount = calculate_group_discount(subtotal, members=members)
+    amount_after_r4 = subtotal - group_discount
+
+    special_offer_discount = calculate_special_offer_discount(amount_after_r4)
+    amount_after_r5 = amount_after_r4 - special_offer_discount
+
+    has_premium = has_premium_extras(extras)
+    premium_surcharge = calculate_premium_surcharge(amount_after_r5, has_premium=has_premium)
+    total = amount_after_r5 + premium_surcharge
+
+    return round_half_up(total)
 
 
 def _build_parser() -> argparse.ArgumentParser:

@@ -2,7 +2,14 @@
 
 import pytest
 
-from gym_quote import calculate_monthly_cost
+from gym_quote import (
+    calculate_group_discount,
+    calculate_monthly_cost,
+    calculate_premium_surcharge,
+    calculate_special_offer_discount,
+    calculate_subtotal,
+    has_premium_extras,
+)
 
 
 @pytest.mark.parametrize(
@@ -15,12 +22,155 @@ def test_plan_price_without_extras(plan, expected):
 
 
 def test_cost_includes_extras_and_all_members():
-    """The plan and extras subtotal is multiplied by the member count."""
-    assert calculate_monthly_cost(
+    """The plan and extras subtotal is multiplied by the member count (R3)."""
+    assert calculate_subtotal(
         "PREMIUM",
         extras=["GROUP_CLASSES", "SPA"],
         members=3,
     ) == (70 + 15 + 30) * 3
+
+
+def test_group_discount_calculation():
+    """R4: 10% discount on subtotal with 2 or more members, 0% with 1 member."""
+    assert calculate_group_discount(100.0, members=1) == 0.0
+    assert calculate_group_discount(100.0, members=2) == 10.0
+    assert calculate_group_discount(200.0, members=4) == 20.0
+
+
+def test_group_discount_applied_for_two_members():
+    """R4: A 2-member quote receives a 10% group discount."""
+    # BASIC (30) + GROUP_CLASSES (15) * 2 = 90. 10% discount -> 81.
+    assert calculate_monthly_cost("BASIC", extras=["GROUP_CLASSES"], members=2) == 81
+
+
+def test_group_discount_applied_for_three_members_rounded():
+    """R4: A 3-member quote receives a 10% discount with half-up rounding."""
+    # BASIC (30) + GROUP_CLASSES (15) * 3 = 135. 10% discount -> 121.5 -> 122.
+    assert calculate_monthly_cost("BASIC", extras=["GROUP_CLASSES"], members=3) == 122
+
+
+def test_group_discount_not_applied_for_single_member():
+    """R4: Quotes with 1 member do not receive the group discount."""
+    # BASIC (30) + GROUP_CLASSES (15) * 1 = 45. No discount -> 45.
+    assert calculate_monthly_cost("BASIC", extras=["GROUP_CLASSES"], members=1) == 45
+
+
+@pytest.mark.parametrize(
+    ("amount", "expected_discount"),
+    [
+        (150.0, 0.0),
+        (200.0, 0.0),
+        (200.01, 20.0),
+        (300.0, 20.0),
+        (400.0, 20.0),
+        (400.01, 50.0),
+        (500.0, 50.0),
+    ],
+)
+def test_special_offer_discount_calculation(amount, expected_discount):
+    """R5: Test special offer tiers (>400 -> 50, >200 -> 20, non-stacking)."""
+    assert calculate_special_offer_discount(amount) == expected_discount
+
+
+def test_special_offer_applied_in_cost_calculation():
+    """R5: Test special offer applied on amount after R4 group discount."""
+    # STANDARD (45) + GROUP_CLASSES (15) + PERSONAL_TRAINING (25) = 85 per member.
+    # 4 members -> subtotal = 340.
+    # R4 group discount (10%) = 34 -> amount after R4 = 306.
+    # R5 special offer: 306 > 200 -> subtract 20 -> 286.
+    assert (
+        calculate_monthly_cost(
+            "STANDARD",
+            extras=["GROUP_CLASSES", "PERSONAL_TRAINING"],
+            members=4,
+        )
+        == 286
+    )
+
+
+def test_special_offer_uses_amount_after_r4_not_raw_subtotal():
+    """R5: Verify the discount tier is decided AFTER R4 discount is subtracted."""
+    # Subtotal = 420. Without R4 it would be > 400 (50 discount).
+    # But after 10% group discount: 420 * 0.90 = 378 (<= 400, > 200), so discount is 20, not 50!
+    subtotal = 420.0
+    group_discount = calculate_group_discount(subtotal, members=2)
+    amount_after_r4 = subtotal - group_discount
+    assert amount_after_r4 == 378.0
+    assert calculate_special_offer_discount(amount_after_r4) == 20.0
+
+
+def test_has_premium_extras_identification():
+    """R6: Correctly detect if a selection includes at least one premium extra."""
+    assert not has_premium_extras([])
+    assert not has_premium_extras(["GROUP_CLASSES", "PERSONAL_TRAINING"])
+    assert has_premium_extras(["SPA"])
+    assert has_premium_extras(["SPECIALIZED_PROGRAM"])
+    assert has_premium_extras(["GROUP_CLASSES", "SPA"])
+    assert has_premium_extras(["SPA", "SPECIALIZED_PROGRAM"])
+
+
+def test_calculate_premium_surcharge_amount():
+    """R6: Add 15% when premium extras are present, 0% otherwise."""
+    assert calculate_premium_surcharge(100.0, has_premium=False) == 0.0
+    assert calculate_premium_surcharge(100.0, has_premium=True) == 15.0
+    assert calculate_premium_surcharge(200.0, has_premium=True) == 30.0
+
+
+def test_premium_surcharge_applied_with_single_premium_extra():
+    """R6: 15% surcharge added to amount after R5 for single premium extra."""
+    # Worked example from assignment table:
+    # PREMIUM (70) + GROUP_CLASSES (15) + SPA (30) = 115 per member.
+    # 2 members -> subtotal = 230.
+    # R4 group discount (10%) = 23 -> amount after R4 = 207.
+    # R5 special offer (207 > 200) -> subtract 20 -> amount after R5 = 187.
+    # R6 premium surcharge (SPA is premium) -> 187 * 0.15 = 28.05 -> total = 215.05.
+    # R7 rounding half-up -> 215.
+    assert (
+        calculate_monthly_cost(
+            "PREMIUM",
+            extras=["GROUP_CLASSES", "SPA"],
+            members=2,
+        )
+        == 215
+    )
+
+
+def test_premium_surcharge_applied_once_with_multiple_premium_extras():
+    """R6: 15% surcharge is added once even when multiple premium extras are selected."""
+    # Worked example from assignment table:
+    # PREMIUM (70) + SPA (30) + SPECIALIZED_PROGRAM (40) = 140 per member.
+    # 3 members -> subtotal = 420.
+    # R4 group discount (10%) = 42 -> amount after R4 = 378.
+    # R5 special offer (378 > 200, <= 400) -> subtract 20 -> amount after R5 = 358.
+    # R6 premium surcharge (15%) -> 358 * 1.15 = 411.7.
+    # R7 rounding half-up -> 412.
+    assert (
+        calculate_monthly_cost(
+            "PREMIUM",
+            extras=["SPA", "SPECIALIZED_PROGRAM"],
+            members=3,
+        )
+        == 412
+    )
+
+
+def test_premium_surcharge_combined_with_max_discounts():
+    """R6: Full pipeline test with group discount, max special offer, and surcharge."""
+    # Worked example from assignment table:
+    # PREMIUM (70) + SPA (30) + SPECIALIZED_PROGRAM (40) + PERSONAL_TRAINING (25) = 165 per member.
+    # 4 members -> subtotal = 660.
+    # R4 group discount (10%) = 66 -> amount after R4 = 594.
+    # R5 special offer (594 > 400) -> subtract 50 -> amount after R5 = 544.
+    # R6 premium surcharge (15%) -> 544 * 1.15 = 625.6.
+    # R7 rounding half-up -> 626.
+    assert (
+        calculate_monthly_cost(
+            "PREMIUM",
+            extras=["SPA", "SPECIALIZED_PROGRAM", "PERSONAL_TRAINING"],
+            members=4,
+        )
+        == 626
+    )
 
 
 def test_plan_and_extra_names_are_case_insensitive():
