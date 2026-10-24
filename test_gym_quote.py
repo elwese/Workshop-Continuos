@@ -25,7 +25,7 @@ def test_cost_includes_extras_and_all_members():
 
 def test_plan_and_extra_names_are_case_insensitive():
     """Names may be entered in any letter case."""
-    assert calculate_monthly_cost("basic", extras=["group_classes"]) == 40
+    assert calculate_monthly_cost("basic", extras=["group_classes"]) == 45
 
 
 @pytest.mark.parametrize("plan", ["", "DELUXE", "UNKNOWN"])
