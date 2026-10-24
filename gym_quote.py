@@ -2,6 +2,7 @@
 
 import argparse
 from collections.abc import Sequence
+from decimal import Decimal, ROUND_HALF_UP
 
 PLANS = {
     "BASIC": 30,
@@ -17,12 +18,17 @@ EXTRAS = {
 }
 
 
-def calculate_monthly_cost(
+def round_half_up(value: float) -> int:
+    """Round a number half up to the nearest integer."""
+    return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def calculate_subtotal(
     plan: str,
     extras: Sequence[str] = (),
     members: int = 1,
 ) -> int:
-    """Return the monthly cost after validating the selected plan and extras."""
+    """Return the subtotal after validating the selected plan and extras (R1, R2, R3)."""
     if not isinstance(members, int) or isinstance(members, bool) or members < 1:
         raise ValueError("The number of members must be an integer of at least 1.")
 
@@ -46,6 +52,28 @@ def calculate_monthly_cost(
         extra_total += price
 
     return (PLANS[plan_name] + extra_total) * members
+
+
+def calculate_group_discount(subtotal: float, members: int) -> float:
+    """Return the group discount amount (R4).
+
+    With 2 or more members, the subtotal gets a 10% discount.
+    """
+    if members >= 2:
+        return subtotal * 0.10
+    return 0.0
+
+
+def calculate_monthly_cost(
+    plan: str,
+    extras: Sequence[str] = (),
+    members: int = 1,
+) -> int:
+    """Return the monthly cost after validating and applying discounts."""
+    subtotal = calculate_subtotal(plan, extras=extras, members=members)
+    group_discount = calculate_group_discount(subtotal, members=members)
+    total = subtotal - group_discount
+    return round_half_up(total)
 
 
 def _build_parser() -> argparse.ArgumentParser:

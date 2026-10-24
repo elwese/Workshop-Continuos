@@ -2,7 +2,11 @@
 
 import pytest
 
-from gym_quote import calculate_monthly_cost
+from gym_quote import (
+    calculate_group_discount,
+    calculate_monthly_cost,
+    calculate_subtotal,
+)
 
 
 @pytest.mark.parametrize(
@@ -15,12 +19,37 @@ def test_plan_price_without_extras(plan, expected):
 
 
 def test_cost_includes_extras_and_all_members():
-    """The plan and extras subtotal is multiplied by the member count."""
-    assert calculate_monthly_cost(
+    """The plan and extras subtotal is multiplied by the member count (R3)."""
+    assert calculate_subtotal(
         "PREMIUM",
         extras=["GROUP_CLASSES", "SPA"],
         members=3,
     ) == (70 + 15 + 30) * 3
+
+
+def test_group_discount_calculation():
+    """R4: 10% discount on subtotal with 2 or more members, 0% with 1 member."""
+    assert calculate_group_discount(100.0, members=1) == 0.0
+    assert calculate_group_discount(100.0, members=2) == 10.0
+    assert calculate_group_discount(200.0, members=4) == 20.0
+
+
+def test_group_discount_applied_for_two_members():
+    """R4: A 2-member quote receives a 10% group discount."""
+    # BASIC (30) + GROUP_CLASSES (15) * 2 = 90. 10% discount -> 81.
+    assert calculate_monthly_cost("BASIC", extras=["GROUP_CLASSES"], members=2) == 81
+
+
+def test_group_discount_applied_for_three_members_rounded():
+    """R4: A 3-member quote receives a 10% discount with half-up rounding."""
+    # BASIC (30) + GROUP_CLASSES (15) * 3 = 135. 10% discount -> 121.5 -> 122.
+    assert calculate_monthly_cost("BASIC", extras=["GROUP_CLASSES"], members=3) == 122
+
+
+def test_group_discount_not_applied_for_single_member():
+    """R4: Quotes with 1 member do not receive the group discount."""
+    # BASIC (30) + GROUP_CLASSES (15) * 1 = 45. No discount -> 45.
+    assert calculate_monthly_cost("BASIC", extras=["GROUP_CLASSES"], members=1) == 45
 
 
 def test_plan_and_extra_names_are_case_insensitive():
